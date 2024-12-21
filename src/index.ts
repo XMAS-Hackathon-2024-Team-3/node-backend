@@ -2,6 +2,7 @@ import csv from "fast-csv";
 import console from "node:console";
 import fs from "node:fs";
 import path from "node:path";
+import { promisify } from "node:util";
 import { pool } from "./db/db.js";
 import { getProvidersByPayment } from "./db/queries/provider.js";
 import { createProvidersTableFromReadStream } from "./db/utils/table-queries.js";
@@ -9,6 +10,8 @@ import { getFilteredProvidersIdFromAI } from "./http/requests/ai.js";
 import { PaymentRow, PaymentRowWithProviders } from "./interfaces/payment.js";
 import { PaymentMapper } from "./mappers/payment.mapper.js";
 import { hashFileName } from "./utils/files.js";
+
+const wait = promisify(setTimeout);
 
 function loadFiles() {
 	const [, , paymentsFilePath, providersFilePath, exRatesFilePath] =
@@ -32,6 +35,8 @@ function loadFiles() {
 }
 
 async function main() {
+	await wait(5000);
+
 	try {
 		const { paymentsFilePath, providersFilePath, exRatesFilePath } =
 			loadFiles();
