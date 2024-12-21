@@ -1,20 +1,12 @@
 import csv from "fast-csv";
 import console from "node:console";
 import fs from "node:fs";
-import path, { dirname } from "node:path";
+import path from "node:path";
 import { pool } from "./db/db.js";
+import { getProvidersByPayment } from "./db/queries/provider.js";
 import { createProvidersTableFromReadStream } from "./db/utils/table-queries.js";
-import { ML_HTTP_PATH } from "./http/constants.js";
-import {
-	Payment,
-	PaymentRow,
-	PaymentRowWithProviders,
-} from "./interfaces/payment.js";
-import {
-	GetFilteredProvidersInputDTO,
-	GetFilteredProvidersOutputDTO,
-	Provider,
-} from "./interfaces/provider.js";
+import { getFilteredProvidersIdFromAI } from "./http/requests/aiRequests.js";
+import { PaymentRow, PaymentRowWithProviders } from "./interfaces/payment.js";
 import { PaymentMapper } from "./mappers/payment.mapper.js";
 import { hashFileName } from "./utils/files.js";
 
@@ -37,32 +29,6 @@ function loadFiles() {
 	}
 
 	return { paymentsFilePath, providersFilePath, exRatesFilePath };
-}
-
-function createResultFilePath() {
-	if (
-		!fs.existsSync(
-			path.resolve(import.meta.dirname, "..", "data", "results")
-		)
-	) {
-		if (!fs.existsSync(path.resolve(import.meta.dirname, "..", "data"))) {
-			fs.mkdirSync(path.resolve(import.meta.dirname, "..", "data"));
-		}
-
-		fs.mkdirSync(
-			path.resolve(import.meta.dirname, "..", "data", "results")
-		);
-	}
-
-	const resultPath = path.resolve(
-		import.meta.dirname,
-		"..",
-		"data",
-		"results"
-	);
-	const resultFileName = `result_${hashFileName()}.csv`;
-
-	return path.resolve(resultPath, resultFileName);
 }
 
 async function main() {
@@ -117,6 +83,32 @@ async function main() {
 	}
 }
 
+function createResultFilePath() {
+	if (
+		!fs.existsSync(
+			path.resolve(import.meta.dirname, "..", "data", "results")
+		)
+	) {
+		if (!fs.existsSync(path.resolve(import.meta.dirname, "..", "data"))) {
+			fs.mkdirSync(path.resolve(import.meta.dirname, "..", "data"));
+		}
+
+		fs.mkdirSync(
+			path.resolve(import.meta.dirname, "..", "data", "results")
+		);
+	}
+
+	const resultPath = path.resolve(
+		import.meta.dirname,
+		"..",
+		"data",
+		"results"
+	);
+	const resultFileName = `result_${hashFileName()}.csv`;
+
+	return path.resolve(resultPath, resultFileName);
+}
+
 async function processPaymentRow(
 	paymentRow: PaymentRow
 ): Promise<PaymentRowWithProviders> {
@@ -137,46 +129,6 @@ async function processPaymentRow(
 			...paymentRow,
 			providersPriority: filteredProvidersId.join("-"),
 		};
-	} catch (error) {
-		throw error;
-	}
-}
-
-async function getProvidersByPayment(payment: Payment): Promise<Provider[]> {
-	try {
-		const { rows } = await pool.query(
-			`SELECT p.* FROM providers p 
-				INNER JOIN (SELECT id, MAX(time) AS max_time FROM providers
-					WHERE
-					currency = $1 AND time <= $2 AND $3 BETWEEN min_sum AND max_sum
-    				GROUP BY id) AS max_times
-				ON p.id = max_times.id AND p.time = max_times.max_time
-				WHERE currency = $1 AND time <= $2 AND $3 BETWEEN min_sum AND max_sum`,
-			[payment.cur, payment.eventTimeRes, payment.amount]
-		);
-
-		return rows as Provider[];
-	} catch (error) {
-		throw error;
-	}
-}
-
-async function getFilteredProvidersIdFromAI(
-	providers: GetFilteredProvidersInputDTO[]
-): Promise<number[]> {
-	const body = JSON.stringify(providers);
-
-	try {
-		const res = await fetch(`${ML_HTTP_PATH}/ai_filtered_data`, {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-			},
-			body: body,
-		});
-		const data: GetFilteredProvidersOutputDTO = await res.json();
-
-		return data.filteredData.map((p) => p.id);
 	} catch (error) {
 		throw error;
 	}
