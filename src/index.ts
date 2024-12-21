@@ -1,9 +1,10 @@
 import csv from "fast-csv";
 import console from "node:console";
 import fs from "node:fs";
-import path from "node:path";
+import path, { dirname } from "node:path";
 import { pool } from "./db/db.js";
 import { createProvidersTableFromReadStream } from "./db/utils/table-queries.js";
+import { ML_HTTP_PATH } from "./http/constants.js";
 import {
 	Payment,
 	PaymentRow,
@@ -18,14 +19,8 @@ import { PaymentMapper } from "./mappers/payment.mapper.js";
 import { hashFileName } from "./utils/files.js";
 
 function loadFiles() {
-	const [
-		,
-		,
-		paymentsFilePath,
-		providersFilePath,
-		exRatesFilePath,
-		resultPath = path.resolve(process.cwd(), "data", "results"),
-	] = process.argv;
+	const [, , paymentsFilePath, providersFilePath, exRatesFilePath] =
+		process.argv;
 
 	if (!paymentsFilePath || !providersFilePath || !exRatesFilePath) {
 		console.error("Please provide all the required file paths");
@@ -41,17 +36,39 @@ function loadFiles() {
 		}
 	}
 
-	return { paymentsFilePath, providersFilePath, exRatesFilePath, resultPath };
+	return { paymentsFilePath, providersFilePath, exRatesFilePath };
+}
+
+function createResultFilePath() {
+	if (
+		!fs.existsSync(
+			path.resolve(import.meta.dirname, "..", "data", "results")
+		)
+	) {
+		if (!fs.existsSync(path.resolve(import.meta.dirname, "..", "data"))) {
+			fs.mkdirSync(path.resolve(import.meta.dirname, "..", "data"));
+		}
+
+		fs.mkdirSync(
+			path.resolve(import.meta.dirname, "..", "data", "results")
+		);
+	}
+
+	const resultPath = path.resolve(
+		import.meta.dirname,
+		"..",
+		"data",
+		"results"
+	);
+	const resultFileName = `result_${hashFileName()}.csv`;
+
+	return path.resolve(resultPath, resultFileName);
 }
 
 async function main() {
 	try {
-		const {
-			paymentsFilePath,
-			providersFilePath,
-			exRatesFilePath,
-			resultPath,
-		} = loadFiles();
+		const { paymentsFilePath, providersFilePath, exRatesFilePath } =
+			loadFiles();
 
 		const paymentsReadStream = fs.createReadStream(
 			path.resolve(paymentsFilePath)
@@ -61,9 +78,9 @@ async function main() {
 			path.resolve(providersFilePath)
 		);
 
-		const resultFileName = `result_${hashFileName()}.csv`;
-		const resultFile = path.resolve(resultPath, resultFileName);
-		const resultWriteStream = fs.createWriteStream(resultFile);
+		const resultFilePath = createResultFilePath();
+
+		const resultWriteStream = fs.createWriteStream(resultFilePath);
 
 		await createProvidersTableFromReadStream(providersReadStream);
 
@@ -88,7 +105,7 @@ async function main() {
 			})
 			.pipe(resultWriteStream)
 			.on("end", (rowCount: number) =>
-				console.log(`Parsed ${rowCount} rows in file ${resultFile}`)
+				console.log(`Parsed ${rowCount} rows in file ${resultFilePath}`)
 			)
 			.on("error", (error) => {
 				console.error(error);
@@ -150,7 +167,7 @@ async function getFilteredProvidersIdFromAI(
 	const body = JSON.stringify(providers);
 
 	try {
-		const res = await fetch("http://localhost:3000/ai_filtered_data", {
+		const res = await fetch(`${ML_HTTP_PATH}/ai_filtered_data`, {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
