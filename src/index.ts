@@ -2,6 +2,7 @@ import csv from "fast-csv";
 import console from "node:console";
 import fs from "node:fs";
 import path from "node:path";
+import stream from "node:stream";
 import { promisify } from "node:util";
 import { pool } from "./db/db.js";
 import { getProvidersByPayment } from "./db/queries/provider.js";
@@ -58,13 +59,10 @@ async function main() {
 		let executionTimeSum = 0;
 		let requestCount = 0;
 
-		paymentsReadStream
-			.pipe(csv.parse({ headers: true }))
-			.pipe(
-				csv.format<PaymentRow, PaymentRowWithProviders>({
-					headers: true,
-				})
-			)
+		const transformStream = csv
+			.format<PaymentRow, PaymentRowWithProviders>({
+				headers: true,
+			})
 			.transform(async (row, next) => {
 				try {
 					const { processedRow, executionTime } =
@@ -80,19 +78,28 @@ async function main() {
 						return next(error);
 					}
 				}
-			})
-			.pipe(resultWriteStream)
-			.on("end", (rowCount: number) => {
-				console.log(
-					`Parsed ${rowCount} rows in file ${resultFilePath}`
-				);
-				console.log(
-					`Total execution time: ${executionTimeSum / requestCount}ms`
-				);
-			})
-			.on("error", (error) => {
-				console.error(error);
 			});
+
+		stream.pipeline(
+			paymentsReadStream,
+			csv.parse({ headers: true }),
+			transformStream,
+			resultWriteStream,
+			(error) => {
+				if (error) {
+					console.error(error);
+				} else {
+					console.log(`Parsed rows in file ${resultFilePath}`);
+					if (requestCount > 0) {
+						const avgExecutionTime =
+							executionTimeSum / requestCount;
+						console.log(
+							`Average ML execution time: ${avgExecutionTime}`
+						);
+					}
+				}
+			}
+		);
 
 		await pool.query("TRUNCATE TABLE providers");
 	} catch (error) {
