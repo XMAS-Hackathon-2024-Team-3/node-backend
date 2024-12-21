@@ -5,7 +5,7 @@ import path from "node:path";
 import { pool } from "./db/db.js";
 import { getProvidersByPayment } from "./db/queries/provider.js";
 import { createProvidersTableFromReadStream } from "./db/utils/table-queries.js";
-import { getFilteredProvidersIdFromAI } from "./http/requests/aiRequests.js";
+import { getFilteredProvidersIdFromAI } from "./http/requests/ai.js";
 import { PaymentRow, PaymentRowWithProviders } from "./interfaces/payment.js";
 import { PaymentMapper } from "./mappers/payment.mapper.js";
 import { hashFileName } from "./utils/files.js";
@@ -50,6 +50,9 @@ async function main() {
 
 		await createProvidersTableFromReadStream(providersReadStream);
 
+		let executionTimeSum = 0;
+		let requestCount = 0;
+
 		paymentsReadStream
 			.pipe(csv.parse({ headers: true }))
 			.pipe(
@@ -59,7 +62,11 @@ async function main() {
 			)
 			.transform(async (row, next) => {
 				try {
-					const processedRow = await processPaymentRow(row);
+					const { processedRow, executionTime } =
+						await processPaymentRow(row);
+
+					executionTimeSum += executionTime;
+					requestCount++;
 
 					return next(null, processedRow);
 				} catch (error) {
@@ -70,9 +77,14 @@ async function main() {
 				}
 			})
 			.pipe(resultWriteStream)
-			.on("end", (rowCount: number) =>
-				console.log(`Parsed ${rowCount} rows in file ${resultFilePath}`)
-			)
+			.on("end", (rowCount: number) => {
+				console.log(
+					`Parsed ${rowCount} rows in file ${resultFilePath}`
+				);
+				console.log(
+					`Total execution time: ${executionTimeSum / requestCount}ms`
+				);
+			})
 			.on("error", (error) => {
 				console.error(error);
 			});
@@ -111,23 +123,28 @@ function createResultFilePath() {
 
 async function processPaymentRow(
 	paymentRow: PaymentRow
-): Promise<PaymentRowWithProviders> {
+): Promise<{ processedRow: PaymentRowWithProviders; executionTime: number }> {
 	const payment = PaymentMapper.paymentRowToPayment(paymentRow);
 
 	const providers = await getProvidersByPayment(payment);
 
 	if (providers.length === 0) {
-		return { ...paymentRow, providersPriority: "" };
+		return {
+			processedRow: { ...paymentRow, providersPriority: "" },
+			executionTime: 0,
+		};
 	}
 
 	try {
-		const filteredProvidersId = await getFilteredProvidersIdFromAI(
-			providers
-		);
+		const { filteredProvidersId, executionTime } =
+			await getFilteredProvidersIdFromAI(providers);
 
 		return {
-			...paymentRow,
-			providersPriority: filteredProvidersId.join("-"),
+			processedRow: {
+				...paymentRow,
+				providersPriority: filteredProvidersId.join("-"),
+			},
+			executionTime,
 		};
 	} catch (error) {
 		throw error;

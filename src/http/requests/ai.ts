@@ -6,11 +6,11 @@ import { ML_HTTP_PATH } from "../constants.js";
 
 export async function getFilteredProvidersIdFromAI(
 	providers: GetFilteredProvidersInputDTO[]
-): Promise<number[]> {
+): Promise<{ filteredProvidersId: number[]; executionTime: number }> {
 	const body = JSON.stringify(providers);
 
 	try {
-		const res = await fetch(`${ML_HTTP_PATH}/ai_filtered_data`, {
+		const res = await fetch(`http://${ML_HTTP_PATH}/ai_filtered_data`, {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
@@ -19,7 +19,10 @@ export async function getFilteredProvidersIdFromAI(
 		});
 		const data: GetFilteredProvidersOutputDTO = await res.json();
 
-		return data.filteredData.map((p) => p.id);
+		return {
+			filteredProvidersId: data.filteredData.map((p) => p.id),
+			executionTime: data.executionTime,
+		};
 	} catch (error) {
 		throw error;
 	}

@@ -43,4 +43,5 @@ export interface FilteredProviderDTO {
 
 export interface GetFilteredProvidersOutputDTO {
 	filteredData: FilteredProviderDTO[];
+	executionTime: number;
 }
