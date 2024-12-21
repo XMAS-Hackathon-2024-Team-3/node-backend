@@ -6,11 +6,16 @@
 2. Создаем .env, прописываем там следующие переменные:
 
 ```
-POSTGRES_USER=user
-POSTGRES_PASSWORD=ddd309kad
+POSTGRES_USER=XMAS2024
+POSTGRES_PASSWORD=XMASPASSWORD
 POSTGRES_DB=pipeline
-POSTGRES_HOST=0.0.0.0
+POSTGRES_HOST=db
 POSTGRES_PORT=5432
+BACKEND_PORT=4000
+
+PAYMENTS_FILE=./data/payments_1.csv
+PROVIDERS_FILE=./data/providers_1.csv
+EXRATES_FILE=./data/ex_rates.csv
 ```
 
 3. Запускаем docker compose
