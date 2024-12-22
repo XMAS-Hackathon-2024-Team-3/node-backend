@@ -25,17 +25,15 @@ export function createCurrencyObjectFromReadStream(
 		THB: 0,
 		TRY: 0,
 		UZS: 0,
+		USD: 0,
+		GHS: 0,
 	};
 
 	currencyStream
 		.pipe(csv.parse({ headers: true }))
 		.on("data", (row: CurrencyRow) => {
-			console.log(row.rate);
 			// @ts-ignore
 			currencies[row.destination] = parseFloat(row.rate);
-		})
-		.on("end", () => {
-			console.log("Currencies loaded");
 		});
 
 	return currencies;

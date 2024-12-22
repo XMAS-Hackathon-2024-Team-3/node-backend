@@ -53,11 +53,13 @@ async function gracefulShutdown(error?: Error) {
 let currenciesToDollars: CurrenciesToDollars;
 
 async function main() {
+	console.log("Starting the application...");
 	await wait(5000);
 
 	try {
 		const { paymentsFilePath, providersFilePath, exRatesFilePath } =
 			loadFiles();
+		console.log("Files loaded successfully");
 
 		const paymentsReadStream = fs.createReadStream(
 			path.resolve(paymentsFilePath)
@@ -84,6 +86,7 @@ async function main() {
 		let requestCount = 0;
 		let totalProfitUSD = 0;
 
+		console.log("Processing payments...");
 		const transformStream = csv
 			.format<PaymentRow, PaymentRowWithProviders>({
 				headers: true,
@@ -188,7 +191,6 @@ async function processPaymentRow(paymentRow: PaymentRow): Promise<{
 			currenciesToDollars[payment.cur as keyof CurrenciesToDollars] *
 			payment.amount;
 
-		let netProfitUSD = amountUSD;
 		let expectedProfitUSD = amountUSD;
 
 		let weightedProfitUSD = 0;

@@ -42,9 +42,6 @@ export async function createProvidersTableFromReadStream(
 				console.error("Stream error:", error);
 				providersStream.destroy();
 				throw error;
-			})
-			.on("end", () => {
-				console.log("Stream processing finished.");
 			});
 	} catch (error) {
 		console.error("Error creating table:", error);

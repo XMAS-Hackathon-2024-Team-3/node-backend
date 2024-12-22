@@ -24,6 +24,8 @@ export enum CurrenciesEnum {
 	THB,
 	TRY,
 	UZS,
+	USD,
+	GHS,
 }
 
 export interface CurrenciesToDollars {
@@ -47,4 +49,6 @@ export interface CurrenciesToDollars {
 	THB: number;
 	TRY: number;
 	UZS: number;
+	USD: number;
+	GHS: number;
 }
