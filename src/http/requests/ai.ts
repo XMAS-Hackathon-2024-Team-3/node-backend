@@ -1,12 +1,17 @@
 import {
+	FilteredProviderDTO,
 	GetFilteredProvidersInputDTO,
 	GetFilteredProvidersOutputDTO,
+	Provider,
 } from "../../interfaces/provider.js";
 import { ML_HTTP_PATH } from "../constants.js";
 
-export async function getFilteredProvidersIdFromAI(
+export async function getFilteredProvidersFromAI(
 	providers: GetFilteredProvidersInputDTO[]
-): Promise<{ filteredProvidersId: number[]; executionTime: number }> {
+): Promise<{
+	filteredProviders: FilteredProviderDTO[];
+	executionTime: number;
+}> {
 	const body = JSON.stringify(providers);
 
 	try {
@@ -20,7 +25,7 @@ export async function getFilteredProvidersIdFromAI(
 		const data: GetFilteredProvidersOutputDTO = await res.json();
 
 		return {
-			filteredProvidersId: data.filteredData.map((p) => p.id),
+			filteredProviders: data.filteredData,
 			executionTime: data.executionTime,
 		};
 	} catch (error) {

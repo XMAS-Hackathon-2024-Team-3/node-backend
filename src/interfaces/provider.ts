@@ -36,6 +36,7 @@ export interface GetFilteredProvidersInputDTO {
 export interface FilteredProviderDTO {
 	id: number;
 	conversion: number;
+	commission: number;
 	avg_time: number;
 	limit_min: number;
 	limit_max: number;

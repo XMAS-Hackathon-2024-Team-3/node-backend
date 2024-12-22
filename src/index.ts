@@ -1,20 +1,16 @@
 import csv from "fast-csv";
-import { default as console, default as console } from "node:console";
-import fs, { ReadStream } from "node:fs";
+import fs from "node:fs";
 import path from "node:path";
 import stream from "node:stream";
 import { promisify } from "node:util";
 import { pool } from "./db/db.js";
 import { getProvidersByPayment } from "./db/queries/provider.js";
 import { createProvidersTableFromReadStream } from "./db/utils/table-queries.js";
-import { getFilteredProvidersIdFromAI } from "./http/requests/ai.js";
-import {
-	CurrenciesEnum,
-	CurrenciesToDollars,
-	CurrencyRow,
-} from "./interfaces/currencies.js";
+import { getFilteredProvidersFromAI } from "./http/requests/ai.js";
+import { CurrenciesToDollars } from "./interfaces/currencies.js";
 import { PaymentRow, PaymentRowWithProviders } from "./interfaces/payment.js";
 import { PaymentMapper } from "./mappers/payment.mapper.js";
+import { createCurrencyObjectFromReadStream } from "./utils/currency.js";
 import { hashFileName } from "./utils/files.js";
 import { countAvgExecutionTime } from "./utils/time.js";
 
@@ -54,45 +50,7 @@ async function gracefulShutdown(error?: Error) {
 	process.exit(error ? 1 : 0);
 }
 
-function createCurrencyObjectFromReadStream(
-	currencyStream: ReadStream
-): CurrenciesToDollars {
-	const currencies: CurrenciesToDollars = {
-		AZN: 0,
-		EUR: 0,
-		HKD: 0,
-		KRW: 0,
-		AUD: 0,
-		MXN: 0,
-		PEN: 0,
-		RUB: 0,
-		BRL: 0,
-		JPY: 0,
-		KZT: 0,
-		NGN: 0,
-		PHP: 0,
-		ZAR: 0,
-		MYR: 0,
-		TJS: 0,
-		KES: 0,
-		THB: 0,
-		TRY: 0,
-		UZS: 0,
-	};
-
-	currencyStream
-		.pipe(csv.parse({ headers: true }))
-		.on("data", (row: CurrencyRow) => {
-			console.log(row.rate);
-			// @ts-ignore
-			currencies[row.destination] = parseFloat(row.rate);
-		})
-		.on("end", () => {
-			console.log("Currencies loaded");
-		});
-
-	return currencies;
-}
+let currenciesToDollars: CurrenciesToDollars;
 
 async function main() {
 	await wait(5000);
@@ -117,13 +75,14 @@ async function main() {
 			path.resolve(exRatesFilePath)
 		);
 
-		const currenciesToDollars =
+		currenciesToDollars =
 			createCurrencyObjectFromReadStream(exRatesReadStream);
 
 		await createProvidersTableFromReadStream(providersReadStream);
 
 		let executionTimeSum = 0;
 		let requestCount = 0;
+		let totalProfitUSD = 0;
 
 		const transformStream = csv
 			.format<PaymentRow, PaymentRowWithProviders>({
@@ -131,25 +90,12 @@ async function main() {
 			})
 			.transform(async (row, next) => {
 				try {
-					const { processedRow, executionTime } =
+					const { processedRow, executionTime, expectedProfitUSD } =
 						await processPaymentRow(row);
-
-					const defSum = parseFloat(processedRow.amount);
-					// @ts-ignore
-					processedRow.amount =
-						currenciesToDollars[
-							processedRow.payment as keyof typeof CurrenciesEnum
-						] * parseFloat(processedRow.amount);
-
-					console.log(
-						"in dollars",
-						processedRow.amount,
-						"in def:",
-						defSum
-					);
 
 					executionTimeSum += executionTime;
 					requestCount++;
+					totalProfitUSD += expectedProfitUSD;
 
 					return next(null, processedRow);
 				} catch (error) {
@@ -179,6 +125,7 @@ async function main() {
 							)}`
 						);
 					}
+					console.log(`Total profit in USD: ${totalProfitUSD}`);
 					gracefulShutdown();
 				}
 			}
@@ -216,9 +163,11 @@ function createResultFilePath() {
 	return path.resolve(resultPath, resultFileName);
 }
 
-async function processPaymentRow(
-	paymentRow: PaymentRow
-): Promise<{ processedRow: PaymentRowWithProviders; executionTime: number }> {
+async function processPaymentRow(paymentRow: PaymentRow): Promise<{
+	processedRow: PaymentRowWithProviders;
+	executionTime: number;
+	expectedProfitUSD: number;
+}> {
 	const payment = PaymentMapper.paymentRowToPayment(paymentRow);
 
 	const providers = await getProvidersByPayment(payment);
@@ -227,19 +176,38 @@ async function processPaymentRow(
 		return {
 			processedRow: { ...paymentRow, providersPriority: "" },
 			executionTime: 0,
+			expectedProfitUSD: 0,
 		};
 	}
 
 	try {
-		const { filteredProvidersId, executionTime } =
-			await getFilteredProvidersIdFromAI(providers);
+		const { filteredProviders, executionTime } =
+			await getFilteredProvidersFromAI(providers);
+
+		const amountUSD =
+			currenciesToDollars[payment.cur as keyof CurrenciesToDollars] *
+			payment.amount;
+
+		let netProfitUSD = amountUSD;
+		let expectedProfitUSD = amountUSD;
+
+		let weightedProfitUSD = 0;
+		for (const provider of filteredProviders) {
+			const commission = provider.commission;
+			const netProfitUSD = amountUSD * (1 - commission);
+			const probability = 1 / filteredProviders.length;
+			weightedProfitUSD +=
+				netProfitUSD * probability * provider.conversion;
+		}
+		expectedProfitUSD = weightedProfitUSD;
 
 		return {
 			processedRow: {
 				...paymentRow,
-				providersPriority: filteredProvidersId.join("-"),
+				providersPriority: filteredProviders.map((p) => p.id).join("-"),
 			},
 			executionTime,
+			expectedProfitUSD,
 		};
 	} catch (error) {
 		throw error;
