@@ -35,6 +35,19 @@ function loadFiles() {
 	return { paymentsFilePath, providersFilePath, exRatesFilePath };
 }
 
+async function gracefulShutdown(error?: Error) {
+	if (error) {
+		console.error(error);
+	}
+	try {
+		await pool.end();
+		console.log("Database connection closed.");
+	} catch (shutdownError) {
+		console.error("Error during database disconnection:", shutdownError);
+	}
+	process.exit(error ? 1 : 0);
+}
+
 async function main() {
 	await wait(5000);
 
@@ -88,6 +101,7 @@ async function main() {
 			(error) => {
 				if (error) {
 					console.error(error);
+					gracefulShutdown(error);
 				} else {
 					console.log(`Parsed rows in file ${resultFilePath}`);
 					if (requestCount > 0) {
@@ -97,13 +111,14 @@ async function main() {
 							`Average ML execution time: ${avgExecutionTime}`
 						);
 					}
+					gracefulShutdown();
 				}
 			}
 		);
 
 		await pool.query("TRUNCATE TABLE providers");
 	} catch (error) {
-		console.error(error);
+		if (error instanceof Error) await gracefulShutdown(error);
 	}
 }
 
@@ -162,5 +177,8 @@ async function processPaymentRow(
 		throw error;
 	}
 }
+
+process.on("uncaughtException", gracefulShutdown);
+process.on("unhandledRejection", gracefulShutdown);
 
 main();

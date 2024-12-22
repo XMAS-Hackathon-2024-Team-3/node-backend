@@ -34,14 +34,20 @@ export async function createProvidersTableFromReadStream(
 						]
 					);
 				} catch (error) {
+					console.error("Error inserting row:", error);
 					throw error;
 				}
 			})
 			.on("error", (error) => {
-				console.error(error);
+				console.error("Stream error:", error);
 				providersStream.destroy();
+				throw error;
+			})
+			.on("end", () => {
+				console.log("Stream processing finished.");
 			});
 	} catch (error) {
+		console.error("Error creating table:", error);
 		throw error;
 	}
 }
