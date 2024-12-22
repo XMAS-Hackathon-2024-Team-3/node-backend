@@ -1,6 +1,6 @@
 import csv from "fast-csv";
-import console from "node:console";
-import fs from "node:fs";
+import { default as console, default as console } from "node:console";
+import fs, { ReadStream } from "node:fs";
 import path from "node:path";
 import stream from "node:stream";
 import { promisify } from "node:util";
@@ -8,9 +8,15 @@ import { pool } from "./db/db.js";
 import { getProvidersByPayment } from "./db/queries/provider.js";
 import { createProvidersTableFromReadStream } from "./db/utils/table-queries.js";
 import { getFilteredProvidersIdFromAI } from "./http/requests/ai.js";
+import {
+	CurrenciesEnum,
+	CurrenciesToDollars,
+	CurrencyRow,
+} from "./interfaces/currencies.js";
 import { PaymentRow, PaymentRowWithProviders } from "./interfaces/payment.js";
 import { PaymentMapper } from "./mappers/payment.mapper.js";
 import { hashFileName } from "./utils/files.js";
+import { countAvgExecutionTime } from "./utils/time.js";
 
 const wait = promisify(setTimeout);
 
@@ -48,6 +54,46 @@ async function gracefulShutdown(error?: Error) {
 	process.exit(error ? 1 : 0);
 }
 
+function createCurrencyObjectFromReadStream(
+	currencyStream: ReadStream
+): CurrenciesToDollars {
+	const currencies: CurrenciesToDollars = {
+		AZN: 0,
+		EUR: 0,
+		HKD: 0,
+		KRW: 0,
+		AUD: 0,
+		MXN: 0,
+		PEN: 0,
+		RUB: 0,
+		BRL: 0,
+		JPY: 0,
+		KZT: 0,
+		NGN: 0,
+		PHP: 0,
+		ZAR: 0,
+		MYR: 0,
+		TJS: 0,
+		KES: 0,
+		THB: 0,
+		TRY: 0,
+		UZS: 0,
+	};
+
+	currencyStream
+		.pipe(csv.parse({ headers: true }))
+		.on("data", (row: CurrencyRow) => {
+			console.log(row.rate);
+			// @ts-ignore
+			currencies[row.destination] = parseFloat(row.rate);
+		})
+		.on("end", () => {
+			console.log("Currencies loaded");
+		});
+
+	return currencies;
+}
+
 async function main() {
 	await wait(5000);
 
@@ -67,6 +113,13 @@ async function main() {
 
 		const resultWriteStream = fs.createWriteStream(resultFilePath);
 
+		const exRatesReadStream = fs.createReadStream(
+			path.resolve(exRatesFilePath)
+		);
+
+		const currenciesToDollars =
+			createCurrencyObjectFromReadStream(exRatesReadStream);
+
 		await createProvidersTableFromReadStream(providersReadStream);
 
 		let executionTimeSum = 0;
@@ -80,6 +133,20 @@ async function main() {
 				try {
 					const { processedRow, executionTime } =
 						await processPaymentRow(row);
+
+					const defSum = parseFloat(processedRow.amount);
+					// @ts-ignore
+					processedRow.amount =
+						currenciesToDollars[
+							processedRow.payment as keyof typeof CurrenciesEnum
+						] * parseFloat(processedRow.amount);
+
+					console.log(
+						"in dollars",
+						processedRow.amount,
+						"in def:",
+						defSum
+					);
 
 					executionTimeSum += executionTime;
 					requestCount++;
@@ -105,10 +172,11 @@ async function main() {
 				} else {
 					console.log(`Parsed rows in file ${resultFilePath}`);
 					if (requestCount > 0) {
-						const avgExecutionTime =
-							executionTimeSum / requestCount;
 						console.log(
-							`Average ML execution time: ${avgExecutionTime}`
+							`Average ML execution time: ${countAvgExecutionTime(
+								executionTimeSum,
+								requestCount
+							)}`
 						);
 					}
 					gracefulShutdown();
