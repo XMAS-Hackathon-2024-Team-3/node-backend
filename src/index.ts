@@ -15,6 +15,7 @@ import { hashFileName } from "./utils/files.js";
 import { countAvgExecutionTime } from "./utils/time.js";
 
 const wait = promisify(setTimeout);
+let totalSumUSD = 0;
 
 function loadFiles() {
 	const [, , paymentsFilePath, providersFilePath, exRatesFilePath] =
@@ -129,6 +130,7 @@ async function main() {
 						);
 					}
 					console.log(`Total profit in USD: ${totalProfitUSD}`);
+					console.log(`Super total in USD: ${totalSumUSD}`);
 					gracefulShutdown();
 				}
 			}
@@ -191,8 +193,9 @@ async function processPaymentRow(paymentRow: PaymentRow): Promise<{
 			currenciesToDollars[payment.cur as keyof CurrenciesToDollars] *
 			payment.amount;
 
-		let expectedProfitUSD = amountUSD;
+		totalSumUSD += amountUSD;
 
+		let expectedProfitUSD = amountUSD;
 		let weightedProfitUSD = 0;
 		for (const provider of filteredProviders) {
 			const commission = provider.commission;
